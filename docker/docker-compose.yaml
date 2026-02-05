@@ -1,0 +1,20 @@
+version: '3.9'
+services:
+  web:
+    image: "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+    container_name: "${DOCKER_CONTAINER_NAME}"
+    restart: always
+    environment:
+      - GX_DEFAULT_DB_URL=jdbc:postgresql://${DB_URL}:5432/${DB_SCHEMA}?useSSL=false
+      - GX_DEFAULT_USER_ID=${DB_USER}
+      - GX_DEFAULT_USER_PASSWORD=${DB_PASSWORD}
+      - GX_GAM_DB_URL=jdbc:postgresql://${GAM_DB_URL}:5432/${GAM_DB_SCHEMA}?useSSL=false
+      - GX_GAM_USER_ID=${GAM_DB_USER}
+      - GX_GAM_USER_PASSWORD=${GAM_DB_PASSWORD}
+      - GX_DATA_IMAGENAME=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+      - GX_DATA_VERSION=${DOCKER_IMAGE_TAG}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "10"
