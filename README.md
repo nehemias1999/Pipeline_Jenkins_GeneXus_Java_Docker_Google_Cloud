@@ -1,5 +1,23 @@
 # Jenkins Pipeline – GeneXus Java Application Deployment with Docker and Google Cloud
 
+CI/CD pipeline (Jenkins) to build, deploy and publish a GeneXus-generated Java application with Docker and Google Cloud.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [High-Level Workflow](#high-level-workflow)
+- [Technologies Used](#technologies-used)
+- [Project Structure](#project-structure)
+- [Pipeline Steps](#pipeline-steps)
+- [Security Considerations](#security-considerations)
+- [Credentials requeridas](#credentials-requeridas)
+- [Trazabilidad / Provenance](#trazabilidad--provenance)
+- [Versionado multi-ambiente (TARGET_ENV + rollback)](#versionado-multi-ambiente-target_env--rollback)
+- [Setup](#setup)
+- [Verificación](#verificación)
+- [Conclusion](#conclusion)
+- [License](#license)
+
 ## Overview
 
 This project implements a **CI/CD pipeline using Jenkins** to build, deploy, and publish a **GeneXus-generated Java application**.
@@ -39,7 +57,10 @@ Pipeline_Jenkins_GeneXus_Java_Docker_Google_Cloud/
 - Jenkinsfile
 - bat/
 - sh/
-- docker/
+- docker/ (Dockerfile, docker-compose.yaml, .env.template)
+- openspec/ (source of truth: change pipeline-hardening-trazabilidad)
+- CHANGELOG.md
+- .gitattributes / .gitignore / .env.template
 - README.md
 
 ---
@@ -145,3 +166,10 @@ files waiting to be committed (checkout-limpio).
 ## Conclusion
 
 This pipeline provides an automated and enterprise-ready solution for deploying GeneXus Java applications using Docker and Google Cloud.
+
+---
+
+## License
+
+No `LICENSE` file in this repo. All rights reserved — internal project
+(see `openspec/` for the requirements source of truth).
