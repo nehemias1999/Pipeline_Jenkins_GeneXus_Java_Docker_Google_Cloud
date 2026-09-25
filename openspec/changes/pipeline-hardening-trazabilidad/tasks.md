@@ -22,7 +22,7 @@
 
 ## 4. Calidad y buenas prácticas (pipeline-quality)
 
-- [ ] 4.1 Agregar `options{}` (timestamps, timeouts, buildDiscarder, disableConcurrentBuilds) + validación temprana y verificar `Jenkinsfile` parsea (Jenkins Linter)
-- [ ] 4.2 Fijar `docker/docker-compose.yaml` (sin version, healthcheck, restart policy) y verificar con `yamllint` exit 0
-- [ ] 4.3 Agregar `.gitattributes`, `CHANGELOG.md`, `.env.template`, actualizar README con setup/credentials/comandos y verificar con `shellcheck sh/*.sh` + `yamllint` + `hadolint` todos exit 0
-- [ ] 4.4 Correr `openspec validate --strict` y verificar 0 errores antes de cada PR
+- [x] 4.1 Agregar `options{}` (timestamps, timeouts, buildDiscarder, disableConcurrentBuilds) + validación temprana y verificar `Jenkinsfile` parsea (Jenkins Linter)
+- [x] 4.2 Fijar `docker/docker-compose.yaml` (sin version, healthcheck, restart policy) y verificar con `yamllint` exit 0
+- [x] 4.3 Agregar `.gitattributes`, `CHANGELOG.md`, `.env.template`, actualizar README con setup/credentials/comandos y verificar con `shellcheck sh/*.sh` + `yamllint` + `hadolint` todos exit 0
+- [x] 4.4 Correr `openspec validate --strict` y verificar 0 errores antes de cada PR
