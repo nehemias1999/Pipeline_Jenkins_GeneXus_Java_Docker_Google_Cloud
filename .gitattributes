@@ -1,0 +1,15 @@
+# ==============================================================================
+# Description: Line-ending hygiene so sh/* stay LF (Linux runners) and bat/*
+#   stay CRLF (Windows Jenkins agent + GeneXus MSBuild).
+# Maintainer: pipeline-quality (openspec pipeline-hardening-trazabilidad)
+# Usage: automatic via git checkout/commit; verify with 'git ls-files --eol'.
+# Env Vars: none. Dependencies: git.
+# ==============================================================================
+# Shell wrappers run on Linux: force LF even on Windows checkouts.
+sh/*.sh text eol=lf
+# Batch wrappers run on the Windows Jenkins agent: force CRLF.
+bat/*.bat text eol=crlf
+# Compose/Dockerfile/Jenkinsfile: LF everywhere for reproducible parsing.
+Jenkinsfile text eol=lf
+docker/* text eol=lf
+*.md text eol=lf

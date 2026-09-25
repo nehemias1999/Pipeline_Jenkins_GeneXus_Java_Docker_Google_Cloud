@@ -3,7 +3,9 @@
 # (DOCKER_IMAGE_NAME/DOCKER_IMAGE_TAG). The healthcheck gates the
 # pipeline-versioning-multienv deploy: DeployDockerImage.bat waits for it and
 # rolls back to the previous tag when it fails or times out.
-version: '3.9'
+# pipeline-quality: no 'version' key (obsolete in Compose Spec v2+; docker
+# compose warns/ignores it). Healthcheck + restart policy intentionally kept:
+# the pipeline deploy gate waits on this healthcheck and rolls back on failure.
 services:
   web:
     image: "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
