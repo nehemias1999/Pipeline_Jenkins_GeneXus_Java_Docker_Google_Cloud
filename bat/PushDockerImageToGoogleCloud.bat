@@ -2,15 +2,20 @@
 
 REM ===============================================
 REM Script: PushDockerImageToGoogleCloud.bat
-REM Description: Pushes a Docker image to Google Cloud.
+REM Description: Pushes a traceable Docker image (tag 1.BUILD_NUMBER-sha7)
+REM   to Google Cloud Artifact Registry and echoes the FULL_IMAGE reference
+REM   plus its RepoDigest so the digest lands in the Jenkins build log.
 REM Usage: PushDockerImageToGoogleCloud.bat ^<SSHPrivateKeyPath^> ^<SSHUser^> ^<SSHHost^> ^<RemoteServerDockerContentPath^> ^<ProjectId^> ^<Region^> ^<DockerImageName^> ^<DockerImageTag^> ^<ServiceAccountFilePath^>
 REM   SSHPrivateKeyPath must be a runtime credential file (Jenkins
 REM   sshUserPrivateKey binding), never a hardcoded path.
 REM   ServiceAccountFilePath must be a runtime file credential (Jenkins
 REM   file binding for gcp-sa-json), never a hardcoded JSON path.
+REM   DockerImageTag must be the traceable tag (1.BUILD_NUMBER-sha7).
+REM Output: push log, then FULL_IMAGE=... and RepoDigests lines.
 REM Exit codes: 0 on success; 1 when the remote push fails after retries.
 REM SSH hardening: StrictHostKeyChecking=yes + ConnectTimeout=10 +
 REM BatchMode=yes, 3 attempts, stage fails on error.
+REM Dependencies: ssh/scp client, remote sh/pushDockerImageToGoogleCloud.sh.
 REM ===============================================
 
 REM ==============================
@@ -53,7 +58,13 @@ IF %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-echo Push completed successfully.
+REM Propagates the traceable tag into the Artifact Registry reference and
+REM echoes the digest so notifications can link image + digest (best effort:
+REM a missing digest never fails the push itself).
+SET FullImage=%Region%-docker.pkg.dev/%ProjectId%/docker/%DockerImageName%:%DockerImageTag%
+echo FULL_IMAGE=%FullImage%
+ssh -i %SSHPrivateKeyPath% %SSH_OPTS% %SSHUser%@%SSHHost% "docker inspect --format={{.RepoDigests}} %FullImage%"
+echo Push completed successfully: %FullImage%.
 
 GOTO :EOF
 
