@@ -10,9 +10,9 @@
 
 ## 2. Trazabilidad (pipeline-traceability)
 
-- [ ] 2.1 Implementar tag `1.<BUILD_NUMBER>-<sha7>` + labels OCI en build y verificar regex y `docker inspect` labels
-- [ ] 2.2 Agregar `sha256sum` WAR + `archiveArtifacts`/`fingerprint` + `currentBuild.description` y verificar artefactos en página del build
-- [ ] 2.3 Agregar notificaciones éxito/fallo con links (build, digest, env) y verificar notificación en build forzado a fallo
+- [x] 2.1 Implementar tag `1.<BUILD_NUMBER>-<sha7>` + labels OCI en build y verificar regex y `docker inspect` labels
+- [x] 2.2 Agregar `sha256sum` WAR + `archiveArtifacts`/`fingerprint` + `currentBuild.description` y verificar artefactos en página del build
+- [x] 2.3 Agregar notificaciones éxito/fallo con links (build, digest, env) y verificar notificación en build forzado a fallo
 
 ## 3. Versionado multi-ambiente (pipeline-versioning-multienv)
 
