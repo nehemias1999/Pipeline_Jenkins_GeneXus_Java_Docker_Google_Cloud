@@ -89,6 +89,16 @@ Create these IDs in Jenkins (Manage Jenkins → Credentials) before running the 
 
 Rotate any previously leaked values (old ApplicationKey, DB passwords, SA key) since they remain in git history until purged.
 
+## Trazabilidad / Provenance
+
+Cada artefacto desplegado es trazable desde el commit y la KB GeneXus hasta la imagen en Artifact Registry:
+
+- **Tag trazable:** `DOCKER_IMAGE_TAG = "1.${BUILD_NUMBER}-${GIT_SHA7}"` (regex `^1\.[0-9]+-[0-9a-f]{7}$`); los tags legacy sin SHA se rechazan al inicio con mensaje actionable.
+- **Labels OCI en `docker build`:** `org.opencontainers.image.revision` (SHA completo), `version` (tag), `created` (UTC), `source` (GIT_URL); verificable con `docker inspect`.
+- **Provenance archivada:** `sha256sum ROOT.war | tee war.sha256` y `archiveArtifacts` + `fingerprint` de `war.sha256`, `docker/docker-compose.yaml` y `docker/.env.template`; `currentBuild.description` muestra `env + tag + sha + KB`.
+- **Digest registrado:** los scripts de build/push imprimen `FULL_IMAGE:` y `DIGEST:` (RepoDigest) en el log.
+- **Notificaciones auditables:** `post { success, failure }` notifica por mail (default) o Slack según `NOTIFY_CHANNEL` (`mail`|`slack`), con links a `BUILD_URL`, tag, commit y `FULL_IMAGE` + digest.
+
 ---
 
 ## Conclusion

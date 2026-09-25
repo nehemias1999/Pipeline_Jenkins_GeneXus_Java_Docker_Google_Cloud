@@ -11,6 +11,8 @@
 # Env Vars: none (all inputs are positional args; the SA key PATH is passed,
 #   never the key content, so the secret never lands in logs)
 # Dependencies: gcloud, docker
+# Output: push log plus FULL_IMAGE=<ref> and DIGEST: <repo-digest> lines for
+#   Jenkins notifications; digest lookup is best-effort (WARN to STDERR).
 # Exit codes: 0 on success; 1 on missing args, missing key file, or any
 #   gcloud/docker failure (set -euo pipefail).
 # ==============================================================================
@@ -80,5 +82,14 @@ gcloud auth configure-docker "${AR_HOST}" --quiet
 echo "[3/3] Tag + Push..."
 docker tag "${IMAGE_NAME}:${TAG}" "${FULL_IMAGE}"
 docker push "${FULL_IMAGE}"
+
+# Prints the RepoDigest so the Jenkins log (and notifications) can link the
+# exact pushed bytes; best-effort because the digest may lag right after push.
+echo "FULL_IMAGE: ${FULL_IMAGE}"
+if DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${FULL_IMAGE}" 2>/dev/null)"; then
+  echo "DIGEST: ${DIGEST}"
+else
+  echo "WARN: RepoDigest not available yet for ${FULL_IMAGE}" >&2
+fi
 
 echo "Image successfully published to Artifact Registry."

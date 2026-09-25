@@ -111,15 +111,31 @@ pipeline {
                                       '%RemoteServerDockerContentPath%'
 
         DockerImageName = 'java_application_dev'
-        DockerImageTag = "1.${BUILD_ID}"
+        /* pipeline-traceability: traceable tag 1.BUILD_NUMBER-sha7.
+           DOCKER_IMAGE_TAG = "1.${BUILD_NUMBER}-${GIT_SHA7}" where GIT_SHA7
+           is the short (7-char) form of GIT_SHA (git rev-parse HEAD,
+           fallback env GIT_COMMIT). Resolved + validated against
+           ^1\.[0-9]+-[0-9a-f]{7}$ in stage 'Resolve Traceability Metadata';
+           legacy tags without SHA fail fast with an actionable message. */
+        GIT_SHA = "${env.GIT_COMMIT ?: ''}"
+        GIT_SHA7 = 'unknown'
+        DOCKER_IMAGE_TAG = "1.${BUILD_NUMBER}-${GIT_SHA7}"
+        IMAGE_CREATED = ''
+        FULL_IMAGE = ''
 
+        /* pipeline-traceability: OCI labels applied at build time
+           (org.opencontainers.image.revision/version/created/source);
+           see CreateDockerImage.bat which passes them to docker build. */
         createDockerImageScript = '"bat\\CreateDockerImage.bat" ' +
                                   '%SSH_KEY_FILE% ' +
                                   '%SSH_USER% ' +
                                   '%SSHHost% ' +
                                   '%RemoteServerDockerContentPath% ' +
-                                  '%DockerImageName% ' + 
-                                  '%DockerImageTag%'
+                                  '%DockerImageName% ' +
+                                  '%DOCKER_IMAGE_TAG% ' +
+                                  '%GIT_SHA% ' +
+                                  '%IMAGE_CREATED% ' +
+                                  '%GIT_URL%'
 
         /* Stage 'Deploy Application Docker image' */
 
@@ -128,7 +144,7 @@ pipeline {
                                   '%SSH_USER% ' +
                                   '%SSHHost% ' +
                                   '%RemoteServerDockerContentPath% ' +
-                                  '%DockerImageTag%'
+                                  '%DOCKER_IMAGE_TAG%'
 
         /* Stage 'Push Application Docker image to Google Cloud' */
 
@@ -144,9 +160,9 @@ pipeline {
                                              '%RemoteServerDockerContentPath% ' +
                                              '%ProjectId% ' +
                                              '%Region% ' +
-                                             '%DockerImageName% ' +
-                                             '%DockerImageTag% ' +
-                                             '%GCP_SA_KEY%'
+                                              '%DockerImageName% ' +
+                                              '%DOCKER_IMAGE_TAG% ' +
+                                              '%GCP_SA_KEY%'
 
         /* Stage 'Post' */
 
@@ -159,6 +175,44 @@ pipeline {
     }
 
     stages {
+
+        stage('Resolve Traceability Metadata') {
+
+            steps {
+
+                echo 'Start Resolve Traceability Metadata'
+
+                script {
+
+                    /* pipeline-traceability: single source of commit->WAR->
+                       image->deploy provenance. Rejects legacy tags without
+                       SHA so untraceable artifacts never reach the registry. */
+                    def sha = (env.GIT_COMMIT ?: '').trim()
+                    if (!sha) {
+                        sha = bat(label: 'Resolve GIT_SHA', returnStdout: true,
+                            script: '@git rev-parse HEAD').trim().readLines().last().trim()
+                    }
+                    env.GIT_SHA = sha
+                    env.GIT_SHA7 = sha.take(7)
+                    env.DOCKER_IMAGE_TAG = "1.${env.BUILD_NUMBER}-${env.GIT_SHA7}"
+                    env.IMAGE_CREATED = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))
+                    env.FULL_IMAGE = "${env.Region}-docker.pkg.dev/${env.ProjectId}/docker/${env.DockerImageName}:${env.DOCKER_IMAGE_TAG}"
+                    if (!(env.DOCKER_IMAGE_TAG ==~ /^1\.[0-9]+-[0-9a-f]{7}$/)) {
+                        error "ACTIONABLE: legacy tag '${env.DOCKER_IMAGE_TAG}' rejected - expected 1.<BUILD_NUMBER>-<sha7> (e.g. 1.42-abc1234). Check git checkout / GIT_COMMIT."
+                    }
+                    if (!(env.GIT_SHA ==~ /^[0-9a-f]{40}$/)) {
+                        error "ACTIONABLE: GIT_SHA '${env.GIT_SHA}' is not a 40-char commit SHA. Check git checkout."
+                    }
+                    currentBuild.description = "env:${env.WorkingEnvironment} tag:${env.DOCKER_IMAGE_TAG} sha:${env.GIT_SHA} kb:${env.WorkingVersion}"
+                    echo "Provenance: tag=${env.DOCKER_IMAGE_TAG} sha=${env.GIT_SHA} created=${env.IMAGE_CREATED} image=${env.FULL_IMAGE}"
+
+                }
+
+                echo 'End Resolve Traceability Metadata'
+
+            }
+
+        }
 
         stage('Checking Changes') {
 
@@ -229,7 +283,7 @@ pipeline {
                         bat label: 'Generate runtime .env',
                         script: '''@echo off
 echo DOCKER_IMAGE_NAME=%DockerImageName%> docker\\.env
-echo DOCKER_IMAGE_TAG=%DockerImageTag%>> docker\\.env
+echo DOCKER_IMAGE_TAG=%DOCKER_IMAGE_TAG%>> docker\\.env
 echo DOCKER_CONTAINER_NAME=%DockerImageName%>> docker\\.env
 echo.>> docker\\.env
 echo DB_URL=%DbUrl%>> docker\\.env
@@ -265,6 +319,16 @@ echo GAM_DB_PASSWORD=%GAM_DB_PASS%>> docker\\.env'''
                     
                     bat label: 'Create WAR file Script',
                     script: "${env.createWARFileScript}"
+
+                    /* pipeline-traceability: sha256sum ROOT.war | tee war.sha256
+                       (Git Bash when available, PowerShell Get-FileHash
+                       fallback); war.sha256 is archived + fingerprinted so the
+                       deployed WAR is auditable from the build page. */
+                    bat label: 'Fingerprint WAR (sha256)',
+                    script: '''@echo off
+where sha256sum >nul 2>&1
+if %ERRORLEVEL%==0 (sha256sum "%DeployFullPath%\\ROOT.war" | tee war.sha256) else (powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 $env:DeployFullPath\\ROOT.war | ForEach-Object { $_.Hash.ToLower() + '  ROOT.war' } | Tee-Object -FilePath war.sha256")
+type war.sha256'''
 
                     /* pipeline-security: SSH key/user from binding; the .bat
                        wrappers enforce StrictHostKeyChecking/ConnectTimeout/
@@ -345,6 +409,14 @@ echo GAM_DB_PASSWORD=%GAM_DB_PASS%>> docker\\.env'''
 
     post {
 
+        always {
+
+            /* pipeline-traceability: provenance archived on every build;
+               fingerprint links WAR + compose + env template to this run. */
+            archiveArtifacts artifacts: 'war.sha256, docker/docker-compose.yaml, docker/.env.template', fingerprint: true, allowEmptyArchive: true
+
+        }
+
         success {
 
             script {
@@ -356,10 +428,52 @@ echo GAM_DB_PASSWORD=%GAM_DB_PASS%>> docker\\.env'''
 
                 }
 
+                /* pipeline-traceability: auditable success notice with links
+                   to the build, the traceable image tag and its digest. */
+                notifyTraceability('SUCCESS')
+
+            }
+
+        }
+
+        failure {
+
+            script {
+
+                /* pipeline-traceability: auditable failure notice (stage name
+                   when available, commit, log link) via NOTIFY_CHANNEL. */
+                notifyTraceability('FAILURE')
+
             }
 
         }
 
     }
-    
+
+}
+
+/* pipeline-traceability: sends the build notice via mail (default) or Slack
+   according to NOTIFY_CHANNEL (job parameter or environment, 'mail'|'slack').
+   Includes BUILD_URL, FULL_IMAGE + digest reference, tag, commit and env so
+   every artifact stays traceable from the notification itself. */
+def notifyTraceability(String result) {
+    def channel = (params?.NOTIFY_CHANNEL ?: env.NOTIFY_CHANNEL ?: 'mail').toString().toLowerCase()
+    def subject = "${result} ${env.JOB_NAME} #${env.BUILD_NUMBER} tag=${env.DOCKER_IMAGE_TAG}"
+    def body = """Result: ${result}
+Job: ${env.JOB_NAME} #${env.BUILD_NUMBER}
+Env: ${env.WorkingEnvironment}
+Tag: ${env.DOCKER_IMAGE_TAG}
+Commit: ${env.GIT_SHA}
+KB: ${env.WorkingVersion}
+Build: ${env.BUILD_URL}
+Image: ${env.FULL_IMAGE} (digest in push log, 'DIGEST:' line)"""
+    try {
+        if (channel == 'slack') {
+            slackSend color: result == 'SUCCESS' ? 'good' : 'danger', message: "${subject}\n${body}"
+        } else {
+            emailext subject: subject, body: body, recipientProviders: [[$class: 'RequesterRecipientProvider']]
+        }
+    } catch (err) {
+        echo "WARN: traceability notification via '${channel}' failed: ${err.getMessage()}"
+    }
 }
