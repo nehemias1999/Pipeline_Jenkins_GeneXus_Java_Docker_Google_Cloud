@@ -1,9 +1,21 @@
+# Compose: GeneXus Java (Tomcat) web service.
+# Purpose: single-image deploy target; image tag comes from runtime docker/.env
+# (DOCKER_IMAGE_NAME/DOCKER_IMAGE_TAG). The healthcheck gates the
+# pipeline-versioning-multienv deploy: DeployDockerImage.bat waits for it and
+# rolls back to the previous tag when it fails or times out.
 version: '3.9'
 services:
   web:
     image: "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
     container_name: "${DOCKER_CONTAINER_NAME}"
     restart: always
+    # Health gate for verified deploys: Tomcat must answer HTTP 200.
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
     environment:
       - GX_DEFAULT_DB_URL=jdbc:postgresql://${DB_URL}:5432/${DB_SCHEMA}?useSSL=false
       - GX_DEFAULT_USER_ID=${DB_USER}
