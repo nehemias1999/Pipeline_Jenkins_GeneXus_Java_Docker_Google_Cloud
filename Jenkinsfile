@@ -29,6 +29,19 @@ pipeline {
 
     agent { label 'SERVER_1' }
 
+    /* pipeline-quality: robust declarative structure. Timestamps every log
+       line, single-flight builds, log rotation, a 2h global ceiling, and
+       per-stage timeouts on the heavy stages (Build KB, Docker build/deploy/
+       push). Parameters are validated in the first stage ('Validate
+       Parameters'): empty/invalid TARGET_ENV fails with an actionable error
+       before touching GeneXus or Docker. */
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
+        timeout(time: 2, unit: 'HOURS')
+    }
+
     /* pipeline-versioning-multienv: explicit job parameters. 'DoPush' is the
        canonical flag; 'Do Docker image application to Google Cloud' is kept as
        a legacy alias so existing job configs keep working. */
@@ -224,6 +237,34 @@ pipeline {
 
     stages {
 
+        stage('Validate Parameters') {
+
+            steps {
+
+                echo 'Start Validate Parameters'
+
+                script {
+
+                    /* pipeline-quality: early parameter gate. Runs before any
+                       GeneXus/Docker/registry step so a bad trigger fails fast
+                       with an actionable message instead of a deep cryptic one. */
+                    def target = (params?.TARGET_ENV ?: '').toString().trim().toUpperCase()
+                    if (!target) {
+                        error "ACTIONABLE: TARGET_ENV is empty - expected one of DEV|QA|PROD (e.g. build with parameter TARGET_ENV=DEV). Check the job trigger / parameters."
+                    }
+                    if (!(target in ['DEV', 'QA', 'PROD'])) {
+                        error "ACTIONABLE: TARGET_ENV='${target}' is invalid - expected one of DEV|QA|PROD. Check the job trigger / parameters."
+                    }
+                    echo "Parameters OK: TARGET_ENV=${target}"
+
+                }
+
+                echo 'End Validate Parameters'
+
+            }
+
+        }
+
         stage('Resolve Environment Config') {
 
             steps {
@@ -328,6 +369,12 @@ pipeline {
 
         stage('Build KB') {
 
+            /* pipeline-quality: per-stage ceiling so a hung MSBuild fails the
+               build instead of blocking the executor forever. */
+            options {
+                timeout(time: 60, unit: 'MINUTES')
+            }
+
             steps {
 
                 echo 'Start Build KB'
@@ -399,6 +446,11 @@ echo GAM_DB_PASSWORD=%GAM_DB_PASS%>> docker\\.env'''
 
         stage('Create Application Docker image') {
 
+            /* pipeline-quality: per-stage ceiling for the remote docker build. */
+            options {
+                timeout(time: 30, unit: 'MINUTES')
+            }
+
             steps {
 
                 echo 'Start Create Application Docker image'
@@ -444,6 +496,12 @@ type war.sha256'''
 
         stage('Deploy Application Docker image') {
 
+            /* pipeline-quality: per-stage ceiling covering compose up plus the
+               healthcheck wait inside DeployDockerImage.bat. */
+            options {
+                timeout(time: 20, unit: 'MINUTES')
+            }
+
             steps {
 
                 echo 'Start Deploy Application Docker image'
@@ -465,6 +523,11 @@ type war.sha256'''
         }
 
         stage('Push Application Docker image to Google Cloud') {
+
+            /* pipeline-quality: per-stage ceiling for auth + registry push. */
+            options {
+                timeout(time: 20, unit: 'MINUTES')
+            }
 
             when {
                 /* DoPush canonical param or legacy alias (env flag or param). */

@@ -108,6 +108,40 @@ Cada artefacto desplegado es trazable desde el commit y la KB GeneXus hasta la i
 
 ---
 
+## Setup
+
+1. Create the Jenkins credentials listed in `Credentials requeridas` (IDs must
+   match exactly; QA/PROD variants use the `-qa`/`-prod` suffixed IDs from
+   `ENV_CONFIG`).
+2. Point a Jenkins agent labelled `SERVER_1` (Windows + GeneXus 18U9) at this
+   repo; the job needs parameters `TARGET_ENV` (`DEV`|`QA`|`PROD`), `Force
+   Rebuild`, `DoPush`, `NOTIFY_CHANNEL` (declared in the `Jenkinsfile`).
+3. Copy nothing secret into the repo: `docker/.env` is generated at runtime
+   from `docker/.env.template` + credentials. Local overrides go in an
+   untracked `.env` (see `.gitignore`).
+4. The remote Docker host needs the compose project under
+   `/docker/<KB>/<ENV>` with `docker/docker-compose.yaml`.
+
+---
+
+## Verificación
+
+Run from the repo root before opening a PR (lint tools must exit 0):
+
+```bash
+shellcheck sh/*.sh
+hadolint docker/Dockerfile
+yamllint docker/docker-compose.yaml
+openspec validate --changes   # --strict when the CLI supports it
+git status --porcelain         # must show no .env / *.war / SA JSON untracked
+```
+
+Expected: the three linters return exit 0, `openspec validate` reports 0
+errors, and `git status --porcelain` shows no `.env`, WAR or `*-key.json`
+files waiting to be committed (checkout-limpio).
+
+---
+
 ## Conclusion
 
 This pipeline provides an automated and enterprise-ready solution for deploying GeneXus Java applications using Docker and Google Cloud.
