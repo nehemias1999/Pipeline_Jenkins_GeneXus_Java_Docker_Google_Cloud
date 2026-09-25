@@ -13,7 +13,7 @@ pipeline {
 
         GXInstallationId = 'SERVER_1_GX18U9'
         GXServerURL = "$GXServer18URL" 
-        GXServerCredentialsId = 'GXServer18'
+        GXServerCredentialsId = 'gx-server-creds'
         GXServerKBName = 'java_application'
         GXServerKBVersion = 'development'
         WorkingDirectory = "C:\\applications\\java_application"
@@ -43,7 +43,9 @@ pipeline {
         /* Stage 'Create Application Docker image' */
 
         ExtraMSBuildPath = "${Genexus18U9Path}\\ApplicationServers\\Templates\\JavaWeb\\msbuild\\TomcatContextSettings.msbuild"
-        ApplicationKey = '34FAA42F9416CFFD90CF9D6AA3E99A68DDF4A64702AE45B9698ABCD98EE93370'
+        /* pipeline-security: ApplicationKey comes from the 'gx-application-key'
+           secret-text credential (masked **** in logs), never a literal. */
+        ApplicationKey = credentials('gx-application-key')
         TargetJRE = '9'
         DeployTarget = "${Genexus18U9Path}\\DeploymentTargets\\Docker\\docker.targets"
         PackageFormat = 'Automatic'
@@ -88,15 +90,23 @@ pipeline {
                               '%GXDPROJFilePath%'
 
         LocalKBEnvironmentPath = "${WorkingDirectory}\\${WorkingEnvironment}"
-        SSHPrivateKeyPath = "C:\\Users\\sa_jenkins\\.ssh\\id_ed25519"
-        SSHUser = 'credential_jenkins'
+        /* pipeline-security: SSH key/user are injected at runtime from the
+           'jenkins-ssh-key' sshUserPrivateKey binding (SSH_KEY_FILE/SSH_USER).
+           SSHHost is non-secret infra config. No key paths or users hardcoded. */
         SSHHost = '10.200.200.200'
         RemoteServerDockerContentPath = "/docker/${GXServerKBName}/${WorkingEnvironment}"
 
+        /* pipeline-security: non-secret DB endpoints for runtime .env
+           generation; passwords come from credentials bindings only. */
+        DbUrl = '10.200.200.200'
+        DbSchema = 'java_application'
+        GamDbUrl = '10.200.200.200'
+        GamDbSchema = 'java_application_gam'
+
         setContentDockerImageScript = '"bat\\SetContentDockerImage.bat" ' +
                                       '%LocalKBEnvironmentPath% ' +
-                                      '%SSHPrivateKeyPath% ' +
-                                      '%SSHUser% ' +
+                                      '%SSH_KEY_FILE% ' +
+                                      '%SSH_USER% ' +
                                       '%SSHHost% ' +
                                       '%RemoteServerDockerContentPath%'
 
@@ -104,8 +114,8 @@ pipeline {
         DockerImageTag = "1.${BUILD_ID}"
 
         createDockerImageScript = '"bat\\CreateDockerImage.bat" ' +
-                                  '%SSHPrivateKeyPath% ' +
-                                  '%SSHUser% ' +
+                                  '%SSH_KEY_FILE% ' +
+                                  '%SSH_USER% ' +
                                   '%SSHHost% ' +
                                   '%RemoteServerDockerContentPath% ' +
                                   '%DockerImageName% ' + 
@@ -114,8 +124,8 @@ pipeline {
         /* Stage 'Deploy Application Docker image' */
 
         deployDockerImageScript = '"bat\\DeployDockerImage.bat" ' +
-                                  '%SSHPrivateKeyPath% ' +
-                                  '%SSHUser% ' +
+                                  '%SSH_KEY_FILE% ' +
+                                  '%SSH_USER% ' +
                                   '%SSHHost% ' +
                                   '%RemoteServerDockerContentPath% ' +
                                   '%DockerImageTag%'
@@ -124,24 +134,25 @@ pipeline {
 
         ProjectId = 'java-ar-application-dev'
         Region = 'southamerica-west1'
-        ServiceAccountFilePath = "/opt/gcp/java-ar-application-dev-67dff02f3ad3.json"
+        /* pipeline-security: SA JSON comes from the 'gcp-sa-json' file
+           credential (GCP_SA_KEY) at runtime; never a hardcoded JSON path. */
 
         pushDockerImageToGoogleCloudScript = '"bat\\PushDockerImageToGoogleCloud.bat" ' +
-                                             '%SSHPrivateKeyPath% ' +
-                                             '%SSHUser% ' +
+                                             '%SSH_KEY_FILE% ' +
+                                             '%SSH_USER% ' +
                                              '%SSHHost% ' +
                                              '%RemoteServerDockerContentPath% ' +
                                              '%ProjectId% ' +
                                              '%Region% ' +
                                              '%DockerImageName% ' +
                                              '%DockerImageTag% ' +
-                                             '%ServiceAccountFilePath%'
+                                             '%GCP_SA_KEY%'
 
         /* Stage 'Post' */
 
         deleteOldDockerLocalImagesScript = '"bat\\DeleteOldDockerLocalImages.bat" ' +
-                                           '%SSHPrivateKeyPath% ' +
-                                           '%SSHUser% ' +
+                                           '%SSH_KEY_FILE% ' +
+                                           '%SSH_USER% ' +
                                            '%SSHHost% ' +
                                            '%RemoteServerDockerContentPath%'
 
@@ -195,6 +206,52 @@ pipeline {
 
         }
 
+        stage('Prepare Runtime Env') {
+
+            steps {
+
+                echo 'Start Prepare Runtime Env'
+
+                script {
+
+                    /* pipeline-security: docker/.env is generated at runtime
+                       from non-secret env config + credentials bindings and is
+                       never versioned (see .gitignore). %VAR% expands in
+                       cmd.exe, so secret VALUES never appear in console logs
+                       (Jenkins masks them as **** regardless). */
+                    withCredentials([
+                        string(credentialsId: 'db-dev-user', variable: 'DB_USER'),
+                        string(credentialsId: 'db-dev-pass', variable: 'DB_PASS'),
+                        string(credentialsId: 'gam-db-user', variable: 'GAM_DB_USER'),
+                        string(credentialsId: 'gam-db-pass', variable: 'GAM_DB_PASS')
+                    ]) {
+
+                        bat label: 'Generate runtime .env',
+                        script: '''@echo off
+echo DOCKER_IMAGE_NAME=%DockerImageName%> docker\\.env
+echo DOCKER_IMAGE_TAG=%DockerImageTag%>> docker\\.env
+echo DOCKER_CONTAINER_NAME=%DockerImageName%>> docker\\.env
+echo.>> docker\\.env
+echo DB_URL=%DbUrl%>> docker\\.env
+echo DB_SCHEMA=%DbSchema%>> docker\\.env
+echo DB_USER=%DB_USER%>> docker\\.env
+echo DB_PASSWORD=%DB_PASS%>> docker\\.env
+echo.>> docker\\.env
+echo GAM_DB_URL=%GamDbUrl%>> docker\\.env
+echo GAM_DB_SCHEMA=%GamDbSchema%>> docker\\.env
+echo GAM_DB_USER=%GAM_DB_USER%>> docker\\.env
+echo GAM_DB_PASSWORD=%GAM_DB_PASS%>> docker\\.env'''
+
+                    }
+
+                }
+
+                echo 'End Prepare Runtime Env'
+
+            }
+
+        }
+
         stage('Create Application Docker image') {
 
             steps {
@@ -209,11 +266,18 @@ pipeline {
                     bat label: 'Create WAR file Script',
                     script: "${env.createWARFileScript}"
 
-                    bat label: 'Set content Docker images Script',
-                    script: "${env.setContentDockerImageScript}"
+                    /* pipeline-security: SSH key/user from binding; the .bat
+                       wrappers enforce StrictHostKeyChecking/ConnectTimeout/
+                       BatchMode + retries and exit 1 on failure. */
+                    withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-ssh-key', keyFileVariable: 'SSH_KEY_FILE', usernameVariable: 'SSH_USER')]) {
 
-                    bat label: 'Create Docker Image Script',
-                    script: "${env.createDockerImageScript}"
+                        bat label: 'Set content Docker images Script',
+                        script: "${env.setContentDockerImageScript}"
+
+                        bat label: 'Create Docker Image Script',
+                        script: "${env.createDockerImageScript}"
+
+                    }
 
                 }
 
@@ -230,8 +294,12 @@ pipeline {
                 echo 'Start Deploy Application Docker image'
                 script {
 
-                    bat label: 'Deploy Script',
-                    script: "${env.deployDockerImageScript}"
+                    withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-ssh-key', keyFileVariable: 'SSH_KEY_FILE', usernameVariable: 'SSH_USER')]) {
+
+                        bat label: 'Deploy Script',
+                        script: "${env.deployDockerImageScript}"
+
+                    }
 
                 }
 
@@ -253,8 +321,17 @@ pipeline {
 
                 script {
 
-                    bat label: 'Push Application Docker image to Google Cloud Script',
-                    script: "${env.pushDockerImageToGoogleCloudScript}"
+                    /* pipeline-security: SA JSON via file credential; the key
+                       FILE path (GCP_SA_KEY) is passed, never key content. */
+                    withCredentials([
+                        sshUserPrivateKey(credentialsId: 'jenkins-ssh-key', keyFileVariable: 'SSH_KEY_FILE', usernameVariable: 'SSH_USER'),
+                        file(credentialsId: 'gcp-sa-json', variable: 'GCP_SA_KEY')
+                    ]) {
+
+                        bat label: 'Push Application Docker image to Google Cloud Script',
+                        script: "${env.pushDockerImageToGoogleCloudScript}"
+
+                    }
 
                 }
 
@@ -272,8 +349,12 @@ pipeline {
 
             script {
 
-                bat label: 'Delete old Docker local images Script',
-                script: "${env.deleteOldDockerLocalImagesScript}"
+                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-ssh-key', keyFileVariable: 'SSH_KEY_FILE', usernameVariable: 'SSH_USER')]) {
+
+                    bat label: 'Delete old Docker local images Script',
+                    script: "${env.deleteOldDockerLocalImagesScript}"
+
+                }
 
             }
 

@@ -65,9 +65,29 @@ Authenticates and pushes the image to Artifact Registry.
 
 ## Security Considerations
 
-- Credentials are managed using Jenkins Credentials
-- SSH key-based authentication is used
+- Credentials are managed using Jenkins Credentials (never hardcoded)
+- SSH key-based authentication is used (hardened: StrictHostKeyChecking, ConnectTimeout, BatchMode, retries)
 - Google Cloud access is controlled via Service Accounts
+- `docker/.env` is generated at runtime from `docker/.env.template` + credentials and is never committed
+
+---
+
+## Credentials requeridas
+
+Create these IDs in Jenkins (Manage Jenkins → Credentials) before running the pipeline. Values are masked as `****` in build logs.
+
+| ID | Type | Used for |
+|----|------|----------|
+| `gx-server-creds` | Username + password | GeneXus Server login (`Build KB` stage) |
+| `jenkins-ssh-key` | SSH username + private key | SSH/SCP to the remote Docker server (`SSH_KEY_FILE`/`SSH_USER`) |
+| `gx-application-key` | Secret text | GeneXus ApplicationKey for the deploy MSBuild script |
+| `gcp-sa-json` | Secret file | GCP Service Account JSON for Artifact Registry push (`GCP_SA_KEY`) |
+| `db-dev-user` | Secret text | `DB_USER` in runtime `docker/.env` |
+| `db-dev-pass` | Secret text | `DB_PASSWORD` in runtime `docker/.env` |
+| `gam-db-user` | Secret text | `GAM_DB_USER` in runtime `docker/.env` |
+| `gam-db-pass` | Secret text | `GAM_DB_PASSWORD` in runtime `docker/.env` |
+
+Rotate any previously leaked values (old ApplicationKey, DB passwords, SA key) since they remain in git history until purged.
 
 ---
 

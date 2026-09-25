@@ -1,0 +1,6 @@
+# Runtime-generated and local secrets: never version these.
+.env
+docker/.env
+*.war
+*-key.json
+ServiceAccount*.json
