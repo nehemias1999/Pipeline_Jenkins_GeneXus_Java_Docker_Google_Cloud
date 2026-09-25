@@ -99,6 +99,13 @@ Cada artefacto desplegado es trazable desde el commit y la KB GeneXus hasta la i
 - **Digest registrado:** los scripts de build/push imprimen `FULL_IMAGE:` y `DIGEST:` (RepoDigest) en el log.
 - **Notificaciones auditables:** `post { success, failure }` notifica por mail (default) o Slack según `NOTIFY_CHANNEL` (`mail`|`slack`), con links a `BUILD_URL`, tag, commit y `FULL_IMAGE` + digest.
 
+## Versionado multi-ambiente (TARGET_ENV + rollback)
+
+- **Parámetros del job:** `TARGET_ENV` (`DEV`|`QA`|`PROD`, default `DEV`), `Force Rebuild` (boolean), `DoPush` (boolean, alias legacy `Do Docker image application to Google Cloud`), `NOTIFY_CHANNEL` (`mail`|`slack`).
+- **Mapa central `ENV_CONFIG`** (cima del `Jenkinsfile`): el stage `Resolve Environment Config` resuelve por ambiente proyecto GCP, región, imagen/contenedor, `ENV_MAJOR` y credential IDs. QA/PROD nunca usan valores DEV.
+- **Tag `MAJOR.BUILD-SHA`** (`ENV_MAJOR` por ambiente, default `1`): el stage de validación temprana rechaza tags legacy sin SHA (`1.42`) con mensaje actionable indicando el formato esperado; coherente con el regex `^1\.[0-9]+-[0-9a-f]{7}$`.
+- **Deploy verificado:** `bat/DeployDockerImage.bat` conserva el tag previo (`.prev_tag`), hace `compose up`, espera el `healthcheck` de `docker/docker-compose.yaml` (`HEALTH_TIMEOUT` default 120s, `HEALTH_INTERVAL` default 10s) y ante fallo/timeout restaura el tag anterior, reinicia la versión previa y sale 1 (build `FAILURE`).
+
 ---
 
 ## Conclusion

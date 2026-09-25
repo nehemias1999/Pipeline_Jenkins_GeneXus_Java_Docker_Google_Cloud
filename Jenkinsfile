@@ -1,6 +1,49 @@
+// ==============================================================================
+// Description: CI/CD pipeline GeneXus Java -> Docker -> Google Cloud.
+//   Multi-env (TARGET_ENV DEV/QA/PROD) via parameters{} + ENV_CONFIG central map;
+//   traceable tag MAJOR.BUILD-SHA; healthcheck deploy with automatic rollback.
+// Usage: Jenkins job build with parameters (TARGET_ENV default DEV).
+// Env Vars: TARGET_ENV, Force Rebuild, DoPush, NOTIFY_CHANNEL (job parameters).
+// Dependencies: Jenkins plugins (gxserver, sshUserPrivateKey, gcp-sa-json),
+//   bat/*.bat wrappers, docker/docker-compose.yaml on the remote host.
+// ==============================================================================
+/* pipeline-versioning-multienv: central per-environment resolution.
+   QA/PROD never reuse DEV values (project, region, image, credentials).
+   ENV_MAJOR keeps tag MAJOR.BUILD-SHA configurable per environment
+   (default '1' everywhere so traceability regex ^1\.[0-9]+-[0-9a-f]{7}$ holds). */
+def ENV_CONFIG = [
+    DEV : [major: '1', projectId: 'java-ar-application-dev',  region: 'southamerica-west1',
+           image: 'java_application_dev',  container: 'java_application_dev',
+           gxCreds: 'gx-server-creds', dbUser: 'db-dev-user',  dbPass: 'db-dev-pass',
+           gamUser: 'gam-db-user',     gamPass: 'gam-db-pass', workEnv: 'DEV'],
+    QA  : [major: '1', projectId: 'java-ar-application-qa',   region: 'southamerica-west1',
+           image: 'java_application_qa',  container: 'java_application_qa',
+           gxCreds: 'gx-server-creds-qa', dbUser: 'db-qa-user',  dbPass: 'db-qa-pass',
+           gamUser: 'gam-db-user-qa',     gamPass: 'gam-db-pass-qa', workEnv: 'QA'],
+    PROD: [major: '1', projectId: 'java-ar-application-prod', region: 'southamerica-west1',
+           image: 'java_application_prod', container: 'java_application_prod',
+           gxCreds: 'gx-server-creds-prod', dbUser: 'db-prod-user',  dbPass: 'db-prod-pass',
+           gamUser: 'gam-db-user-prod',     gamPass: 'gam-db-pass-prod', workEnv: 'PROD']
+]
 pipeline {
 
     agent { label 'SERVER_1' }
+
+    /* pipeline-versioning-multienv: explicit job parameters. 'DoPush' is the
+       canonical flag; 'Do Docker image application to Google Cloud' is kept as
+       a legacy alias so existing job configs keep working. */
+    parameters {
+        choice(name: 'TARGET_ENV', choices: ['DEV', 'QA', 'PROD'],
+            description: 'Target environment (resolves project/region/image/credentials from ENV_CONFIG).')
+        booleanParam(name: 'Force Rebuild', defaultValue: false,
+            description: 'Force GeneXus KB rebuild even without changes.')
+        booleanParam(name: 'DoPush', defaultValue: false,
+            description: 'Push the Docker image to Google Cloud Artifact Registry.')
+        booleanParam(name: 'Do Docker image application to Google Cloud', defaultValue: false,
+            description: 'Legacy alias of DoPush (kept for backward compatibility).')
+        string(name: 'NOTIFY_CHANNEL', defaultValue: 'mail',
+            description: "Traceability notification channel: 'mail' (default) or 'slack'.")
+    }
 
     environment {
 
@@ -137,14 +180,19 @@ pipeline {
                                   '%IMAGE_CREATED% ' +
                                   '%GIT_URL%'
 
-        /* Stage 'Deploy Application Docker image' */
+        /* Stage 'Deploy Application Docker image'
+           pipeline-versioning-multienv: passes the per-env container name so
+           the wrapper can healthcheck the right container; the wrapper keeps
+           the previous tag and rolls back automatically on healthcheck failure
+           (non-zero exit marks the build FAILURE). */
 
         deployDockerImageScript = '"bat\\DeployDockerImage.bat" ' +
                                   '%SSH_KEY_FILE% ' +
                                   '%SSH_USER% ' +
                                   '%SSHHost% ' +
                                   '%RemoteServerDockerContentPath% ' +
-                                  '%DOCKER_IMAGE_TAG%'
+                                  '%DOCKER_IMAGE_TAG% ' +
+                                  '%DockerContainerName%'
 
         /* Stage 'Push Application Docker image to Google Cloud' */
 
@@ -176,6 +224,41 @@ pipeline {
 
     stages {
 
+        stage('Resolve Environment Config') {
+
+            steps {
+
+                echo 'Start Resolve Environment Config'
+
+                script {
+
+                    /* pipeline-versioning-multienv: single source of per-env
+                       config; DEV stays the default so merged security (PR #1)
+                       and traceability (PR #2) behavior is unchanged. */
+                    def target = (params?.TARGET_ENV ?: 'DEV').toString().toUpperCase()
+                    def cfg = ENV_CONFIG[target] ?: ENV_CONFIG['DEV']
+                    env.TARGET_ENV = target
+                    env.ENV_MAJOR = cfg.major
+                    env.ProjectId = cfg.projectId
+                    env.Region = cfg.region
+                    env.DockerImageName = cfg.image
+                    env.DockerContainerName = cfg.container
+                    env.WorkingEnvironment = cfg.workEnv
+                    env.GXServerCredentialsId = cfg.gxCreds
+                    env.DbUserCredId = cfg.dbUser
+                    env.DbPassCredId = cfg.dbPass
+                    env.GamDbUserCredId = cfg.gamUser
+                    env.GamDbPassCredId = cfg.gamPass
+                    echo "Environment: TARGET_ENV=${env.TARGET_ENV} project=${env.ProjectId} region=${env.Region} image=${env.DockerImageName} major=${env.ENV_MAJOR}"
+
+                }
+
+                echo 'End Resolve Environment Config'
+
+            }
+
+        }
+
         stage('Resolve Traceability Metadata') {
 
             steps {
@@ -194,9 +277,15 @@ pipeline {
                     }
                     env.GIT_SHA = sha
                     env.GIT_SHA7 = sha.take(7)
-                    env.DOCKER_IMAGE_TAG = "1.${env.BUILD_NUMBER}-${env.GIT_SHA7}"
+                    /* pipeline-versioning-multienv: MAJOR.BUILD-SHA, MAJOR from
+                       ENV_CONFIG (default '1'); legacy tags without SHA are
+                       rejected here, before any build/push/registry step. */
+                    env.DOCKER_IMAGE_TAG = "${env.ENV_MAJOR ?: '1'}.${env.BUILD_NUMBER}-${env.GIT_SHA7}"
                     env.IMAGE_CREATED = new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone('UTC'))
                     env.FULL_IMAGE = "${env.Region}-docker.pkg.dev/${env.ProjectId}/docker/${env.DockerImageName}:${env.DOCKER_IMAGE_TAG}"
+                    if (env.DOCKER_IMAGE_TAG ==~ /^[0-9]+\.[0-9]+$/) {
+                        error "ACTIONABLE: legacy tag '${env.DOCKER_IMAGE_TAG}' rejected - expected MAJOR.<BUILD_NUMBER>-<sha7> (e.g. ${env.ENV_MAJOR ?: '1'}.42-abc1234). Tags without the SHA suffix are untraceable; check git checkout / GIT_COMMIT."
+                    }
                     if (!(env.DOCKER_IMAGE_TAG ==~ /^1\.[0-9]+-[0-9a-f]{7}$/)) {
                         error "ACTIONABLE: legacy tag '${env.DOCKER_IMAGE_TAG}' rejected - expected 1.<BUILD_NUMBER>-<sha7> (e.g. 1.42-abc1234). Check git checkout / GIT_COMMIT."
                     }
@@ -273,11 +362,13 @@ pipeline {
                        never versioned (see .gitignore). %VAR% expands in
                        cmd.exe, so secret VALUES never appear in console logs
                        (Jenkins masks them as **** regardless). */
+                    /* pipeline-versioning-multienv: per-env credential IDs resolved
+                       from ENV_CONFIG (DEV defaults preserve PR #1 behavior). */
                     withCredentials([
-                        string(credentialsId: 'db-dev-user', variable: 'DB_USER'),
-                        string(credentialsId: 'db-dev-pass', variable: 'DB_PASS'),
-                        string(credentialsId: 'gam-db-user', variable: 'GAM_DB_USER'),
-                        string(credentialsId: 'gam-db-pass', variable: 'GAM_DB_PASS')
+                        string(credentialsId: "${env.DbUserCredId ?: 'db-dev-user'}", variable: 'DB_USER'),
+                        string(credentialsId: "${env.DbPassCredId ?: 'db-dev-pass'}", variable: 'DB_PASS'),
+                        string(credentialsId: "${env.GamDbUserCredId ?: 'gam-db-user'}", variable: 'GAM_DB_USER'),
+                        string(credentialsId: "${env.GamDbPassCredId ?: 'gam-db-pass'}", variable: 'GAM_DB_PASS')
                     ]) {
 
                         bat label: 'Generate runtime .env',
@@ -376,7 +467,8 @@ type war.sha256'''
         stage('Push Application Docker image to Google Cloud') {
 
             when {
-                expression { env.DoPushApplicationGoogleCloud == 'true' }
+                /* DoPush canonical param or legacy alias (env flag or param). */
+                expression { params['DoPush'] == true || env.DoPushApplicationGoogleCloud == 'true' }
             }
 
             steps {
