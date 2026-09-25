@@ -16,9 +16,9 @@
 
 ## 3. Versionado multi-ambiente (pipeline-versioning-multienv)
 
-- [ ] 3.1 Agregar `parameters{TARGET_ENV,Force Rebuild,DoPush,NOTIFY_CHANNEL}` + mapa ENV_CONFIG y verificar que QA no usa valores DEV
-- [ ] 3.2 Validar formato de tag y rechazar legacy sin SHA, verificando fallo temprano con mensaje actionable
-- [ ] 3.3 Implementar espera de healthcheck + rollback automático y verificar restauración del tag previo ante fallo simulado
+- [x] 3.1 Agregar `parameters{TARGET_ENV,Force Rebuild,DoPush,NOTIFY_CHANNEL}` + mapa ENV_CONFIG y verificar que QA no usa valores DEV
+- [x] 3.2 Validar formato de tag y rechazar legacy sin SHA, verificando fallo temprano con mensaje actionable
+- [x] 3.3 Implementar espera de healthcheck + rollback automático y verificar restauración del tag previo ante fallo simulado
 
 ## 4. Calidad y buenas prácticas (pipeline-quality)
 
