@@ -2,10 +2,10 @@
 
 ## 1. Seguridad (pipeline-security)
 
-- [ ] 1.1 Migrar ApplicationKey, GXServer password, SSH key y SA JSON a Jenkins credentials bindings y verificar que `grep -r ApplicationKey Jenkinsfile` no retorna literales
-- [ ] 1.2 Generar `docker/.env` en runtime desde template + credentials, agregar `.gitignore` y verificar con `git ls-files | grep docker/.env` vacío y `git status --porcelain` limpio
-- [ ] 1.3 Endurecer wrappers SSH/SCP (StrictHostKeyChecking, ConnectTimeout, BatchMode, reintentos) en `bat/*.bat` y verificar fallo controlado con host inválido
-- [ ] 1.4 Endurecer `docker/Dockerfile` (non-root, HEALTHCHECK, labels OCI, sin cache apt) y verificar con `hadolint docker/Dockerfile` exit 0 y `docker inspect` User+Healthcheck
+- [x] 1.1 Migrar ApplicationKey, GXServer password, SSH key y SA JSON a Jenkins credentials bindings y verificar que `grep -r ApplicationKey Jenkinsfile` no retorna literales
+- [x] 1.2 Generar `docker/.env` en runtime desde template + credentials, agregar `.gitignore` y verificar con `git ls-files | grep docker/.env` vacío y `git status --porcelain` limpio
+- [x] 1.3 Endurecer wrappers SSH/SCP (StrictHostKeyChecking, ConnectTimeout, BatchMode, reintentos) en `bat/*.bat` y verificar fallo controlado con host inválido
+- [x] 1.4 Endurecer `docker/Dockerfile` (non-root, HEALTHCHECK, labels OCI, sin cache apt) y verificar con `hadolint docker/Dockerfile` exit 0 y `docker inspect` User+Healthcheck
 - [ ] 1.5 Rotar secretos filtrados (DB root/root, ApplicationKey, SA JSON) y verificar conectividad con nuevas credentials desde Jenkins
 
 ## 2. Trazabilidad (pipeline-traceability)
